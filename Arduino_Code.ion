@@ -1,0 +1,294 @@
+#include <Servo.h>
+
+// L298N Motor Driver Pins
+#define ENA 6
+#define IN1 13
+#define IN2 12
+#define IN3 11
+#define IN4 10
+#define ENB 5
+
+// IR Sensor Pins
+#define RIGHT_IR 2
+#define LEFT_IR 4
+
+// Ultrasonic Sensor Pins
+#define TRIG 9
+#define ECHO 8
+
+// Servo Motor Pin
+#define SERVO_PIN 3
+
+// Motor Speeds
+int leftSpeed = 150;
+int rightSpeed = 150;
+
+// Obstacle Distance
+int obstacleDistance = 15;
+
+// Servo object
+Servo scanServo;
+
+// Remember last correction direction
+int lastTurn = 0;
+
+// Function declarations
+void forward();
+void backward();
+void turnLeft();
+void turnRight();
+void stopRobot();
+long getDistance();
+long scanDirection(int angle);
+void avoidObstacle();
+void followLine();
+
+void setup() {
+  Serial.begin(9600);
+
+  // Motor pins
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENB, OUTPUT);
+
+  // IR sensor pins
+  pinMode(LEFT_IR, INPUT);
+  pinMode(RIGHT_IR, INPUT);
+
+  // Ultrasonic pins
+  pinMode(TRIG, OUTPUT);
+  pinMode(ECHO, INPUT);
+
+  // Servo setup
+  scanServo.attach(SERVO_PIN);
+  scanServo.write(90);
+  delay(500);
+
+  stopRobot();
+
+  Serial.println("Robot Started");
+}
+
+void loop() {
+
+  long distance = getDistance();
+
+  Serial.print("Distance: ");
+  Serial.println(distance);
+
+  // Check for obstacle
+  if (distance > 0 && distance <= obstacleDistance) {
+
+    stopRobot();
+    delay(300);
+
+    avoidObstacle();
+  }
+  else {
+    followLine();
+  }
+}
+
+// ---------------- MOTOR CONTROL ----------------
+
+void forward() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  analogWrite(ENA, leftSpeed);
+  analogWrite(ENB, rightSpeed);
+}
+
+void backward() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+
+  analogWrite(ENA, leftSpeed);
+  analogWrite(ENB, rightSpeed);
+}
+
+void turnLeft() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  analogWrite(ENA, leftSpeed);
+  analogWrite(ENB, rightSpeed);
+}
+
+void turnRight() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+
+  analogWrite(ENA, leftSpeed);
+  analogWrite(ENB, rightSpeed);
+}
+
+void stopRobot() {
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+}
+
+// ---------------- ULTRASONIC SENSOR ----------------
+
+long getDistance() {
+
+  digitalWrite(TRIG, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(TRIG, HIGH);
+  delayMicroseconds(10);
+
+  digitalWrite(TRIG, LOW);
+
+  long duration = pulseIn(ECHO, HIGH, 25000);
+
+  if (duration == 0) {
+    return 999;
+  }
+
+  long distance = duration * 0.0343 / 2;
+
+  return distance;
+}
+
+// ---------------- SERVO SCANNING ----------------
+
+long scanDirection(int angle) {
+
+  scanServo.write(angle);
+  delay(500);
+
+  long distance = getDistance();
+
+  return distance;
+}
+
+// ---------------- OBSTACLE AVOIDANCE ----------------
+
+void avoidObstacle() {
+
+  Serial.println("Obstacle Detected!");
+
+  // Scan left and right
+  long leftDistance = scanDirection(150);
+  long rightDistance = scanDirection(30);
+
+  // Return servo to center
+  scanServo.write(90);
+  delay(300);
+
+  Serial.print("Left: ");
+  Serial.println(leftDistance);
+
+  Serial.print("Right: ");
+  Serial.println(rightDistance);
+
+  // Reverse before turning
+  backward();
+  delay(400);
+
+  stopRobot();
+  delay(200);
+
+  // Select clearer direction
+  if (leftDistance > rightDistance) {
+
+    Serial.println("Turning Left");
+
+    turnLeft();
+    delay(650);
+  }
+  else {
+
+    Serial.println("Turning Right");
+
+    turnRight();
+    delay(650);
+  }
+
+  stopRobot();
+  delay(200);
+
+  // Move forward to clear obstacle
+  forward();
+  delay(700);
+
+  stopRobot();
+  delay(200);
+
+  // Return to line following
+  scanServo.write(90);
+}
+
+// ---------------- LINE FOLLOWING ----------------
+
+void followLine() {
+
+  int leftSensor = digitalRead(LEFT_IR);
+  int rightSensor = digitalRead(RIGHT_IR);
+
+  Serial.print("Left IR: ");
+  Serial.print(leftSensor);
+
+  Serial.print(" Right IR: ");
+  Serial.println(rightSensor);
+
+  // Both sensors detect black
+  if (leftSensor == 0 && rightSensor == 0) {
+
+    forward();
+    lastTurn = 0;
+  }
+
+  // Left sensor detects black
+  else if (leftSensor == 0 && rightSensor == 1) {
+
+    turnLeft();
+    lastTurn = -1;
+  }
+
+  // Right sensor detects black
+  else if (leftSensor == 1 && rightSensor == 0) {
+
+    turnRight();
+    lastTurn = 1;
+  }
+
+  // Both sensors detect white
+  else {
+
+    stopRobot();
+    delay(100);
+
+    // Search in the last correction direction
+    if (lastTurn == -1) {
+      turnLeft();
+    }
+    else if (lastTurn == 1) {
+      turnRight();
+    }
+    else {
+      forward();
+    }
+  }
+}
